@@ -1,29 +1,87 @@
 import os,sys,thread,socket
-import argparse
+import argparse, time
+import base64
 
 argparser  = argparse.ArgumentParser(description="HTTP Proxy")
 argparser.add_argument('-p', '--port', help='Port Number', default=8080)
-# argparser.add_argument('-u', '--userff', help='user based filter file', default='dict.txt')
-# argparser.add_argument('-f', '--filter', help='Domain Names to Filter', nargs='+', default=[])
+argparser.add_argument('-u', '--userff', help='user based filter file', default='pass.txt')
+argparser.add_argument('-f', '--filter', help='Domain Names to Filter', nargs='+', default=[])
 args = argparser.parse_args()
-port = args.port
+
+port = args.port		
+filter_hostnames_args = args.filter
+userff = args.userff
 
 BACKLOG = 50            # how many pending connections queue will hold
 MAX_DATA_RECV = 999999  # max number of bytes we receive at once
 DEBUG = True            # set to True to see the debug msgs
 BLOCKED = ["bjp"]            # just an example. Remove with [""] for no blocking at all.
+weekdayname = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+monthname = [None,
+				 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+				 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+msg_dict = {407: '407 Proxy Authentication Required', 405: 'Method Not Allowed' , 403: 'Forbidden', 404: 'Not Found'}
 
+def userFilter(userFp):
 
-def printout(type,request,address):
-	if "Block" in type or "Blacklist" in type:
-		colornum = 91
-	elif "Request" in type:
-		colornum = 92
-	elif "Reset" in type:
-		colornum = 93
+	try:
+		with open(userFp, 'rb') as f:
+			lines = f.read().splitlines()
 
-	# print "\033[",colornum,"m",address[0],"\t",type,"\t",request,"\033[0m"
-	print type, request
+		filter_hostnames = {}
+		for line in lines:
+			cred = line.split(' ')[0]
+			this_hostnames = []
+			for item in line.split()[1:]:
+				this_hostnames.append(item)
+
+			filter_hostnames[base64.b64encode(bytes(cred))] = this_hostnames
+
+		return filter_hostnames
+
+	except IOError:
+		print("User Filtering File:  %s Does not Exist" %(userFp))
+		exit()
+		return None
+
+def authStrings(authFp):
+
+	try:
+		with open(authFp, 'rb') as f:
+			lines = f.read().splitlines()
+
+		authList = []
+		for line in lines:
+			authList.append(base64.b64encode(bytes(line.split()[0])))
+
+		return authList
+
+	except IOError:
+		print("Authentication File:  %s Does not Exist" %(authFp))
+		exit()
+		return None
+
+def send_error(code, client):
+
+	version_string = b'HTTP/1.1'
+	msg = msg_dict[code]
+
+	year, month, day, hh, mm, ss, wd, y, z = time.gmtime(time.time())
+	date_header = "%s, %02d %3s %4d %02d:%02d:%02d GMT\r\n" % (
+				weekdayname[wd],
+				day, monthname[month], year,
+				hh, mm, ss)
+
+	if code != 407:
+		# response_string = version_string+ '  '+ str(code) + ' ' + msg+ '\r\nDate: '+date_header#+'Content-Type: text/html\r\nConnection: close\r\n'
+		response_string = "%d %s" % (code, msg)
+	else:
+		response_string = version_string+ '  '+ str(code) + ' ' + msg+ '\r\nDate: '+date_header+'Proxy-Authenticate: Basic realm=\"Access to internal site\"\r\n'
+
+	# print(response_string)
+	client.send(response_string)
+
+	return 0
 
 def proxy_thread(conn, client_addr):
 
@@ -32,18 +90,35 @@ def proxy_thread(conn, client_addr):
 	
 	# parse the first line
 	first_line = request.split('\n')[0]
+	
+	option = first_line.split()[0]
+	if option not in ['GET', 'HEAD', 'POST']:
+		print option
+		send_error(405, conn)
+		return 0
 
-	# get url
-	url = first_line.split(' ')[1]
+	authentication =  request[request.find(': Basic ')+8:].split('\n')[0][:-1]
+	print authentication
+	if authentication not in authKeys:
+		print('[AUTH ERROR]')
+		send_error(407, conn)
+		return 0
+
+	try:
+		# get url
+		url = first_line.split(' ')[1]
+	except socket.gaierror:
+		print('[ERROR]')
+		send_error(404, conn)
+		return 0
 
 	for i in range(0,len(BLOCKED)):
 		if BLOCKED[i] in url:
-			printout("Blacklisted",first_line,client_addr)
+			print "Blacklisted", first_line
 			conn.close()
 			sys.exit(1)
 
-
-	printout("Request",first_line,client_addr)
+	# print "Request", first_line
 	
 	# find the webserver and port
 	http_pos = url.find("://")          # find pos of ://
@@ -91,14 +166,16 @@ def proxy_thread(conn, client_addr):
 			s.close()
 		if conn:
 			conn.close()
-		# printout("Peer Reset",first_line,client_addr)
+		# print "Reset", first_line
 		sys.exit(1)
 
 if __name__ == '__main__':
 
 	# create a socket
 	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
-	
+	authKeys = authStrings(userff)
+	filter_hostnames = userFilter(userff)
+
 	while True:
 		try:
 			s.bind(('', port))
