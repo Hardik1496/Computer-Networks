@@ -1,6 +1,7 @@
-import os,sys,thread,socket
+import os,sys,_thread,socket
 import argparse, time
 import base64
+from adblockparser import AdblockRules
 
 argparser  = argparse.ArgumentParser(description="HTTP Proxy")
 argparser.add_argument('-p', '--port', help='Port Number', default=8080)
@@ -26,8 +27,8 @@ def userFilter(userFp):
 
 	try:
 		with open(userFp, 'rb') as f:
-			lines = f.read().splitlines()
-
+			 lines = [x.decode('utf8').strip() for x in f.readlines()]
+		
 		filter_hostnames = {}
 		for line in lines:
 			cred = line.split(' ')[0]
@@ -35,7 +36,7 @@ def userFilter(userFp):
 			for item in line.split()[1:]:
 				this_hostnames.append(item)
 
-			filter_hostnames[base64.b64encode(bytes(cred))] = this_hostnames
+			filter_hostnames[base64.b64encode(bytes(cred,"utf-8"))] = this_hostnames
 
 		return filter_hostnames
 
@@ -93,12 +94,12 @@ def proxy_thread(conn, client_addr):
 	
 	option = first_line.split()[0]
 	if option not in ['GET', 'HEAD', 'POST']:
-		print option
+		print(option)
 		send_error(405, conn)
 		return 0
 
 	authentication =  request[request.find(': Basic ')+8:].split('\n')[0][:-1]
-	print authentication
+	print(authentication)
 	if authentication not in authKeys:
 		print('[AUTH ERROR]')
 		send_error(407, conn)
@@ -114,7 +115,7 @@ def proxy_thread(conn, client_addr):
 
 	for i in range(0,len(BLOCKED)):
 		if BLOCKED[i] in url:
-			print "Blacklisted", first_line
+			print ("Blacklisted", first_line)
 			conn.close()
 			sys.exit(1)
 
@@ -143,6 +144,8 @@ def proxy_thread(conn, client_addr):
 		port = int((temp[(port_pos+1):])[:webserver_pos-port_pos-1])
 		webserver = temp[:port_pos]
 
+	rules = AdblockRules(raw_rules)
+
 	try:
 		# create a socket to connect to the web server
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  
@@ -161,7 +164,7 @@ def proxy_thread(conn, client_addr):
 
 		s.close()
 		conn.close()
-	except socket.error, (value, message):
+	except (socket.error, (value, message)):
 		if s:
 			s.close()
 		if conn:
@@ -193,6 +196,6 @@ if __name__ == '__main__':
 		conn, client_addr = s.accept()
 
 		# create a thread to handle request
-		thread.start_new_thread(proxy_thread, (conn, client_addr))
+		_thread.start_new_thread(proxy_thread, (conn, client_addr))
 		
 	s.close()
