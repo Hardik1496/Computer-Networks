@@ -1,6 +1,7 @@
 import os,sys,_thread,socket
 import argparse, time
 import base64
+from adblockparser import AdblockRules
 
 argparser  = argparse.ArgumentParser(description="HTTP Proxy")
 argparser.add_argument('-p', '--port', help='Port Number', default=8080)
@@ -146,6 +147,8 @@ def proxy_thread(conn, client_addr):
 	else:       # specific port
 		port = int((temp[(port_pos+1):])[:webserver_pos-port_pos-1])
 		webserver = temp[:port_pos]
+
+	rules = AdblockRules(raw_rules)
 
 	try:
 		# create a socket to connect to the web server
