@@ -1,4 +1,4 @@
-import os,sys,thread,socket
+import os,sys,_thread,socket
 import argparse, time
 import base64
 
@@ -21,11 +21,12 @@ monthname = [None,
 				 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
 				 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 msg_dict = {407: '407 Proxy Authentication Required', 405: 'Method Not Allowed' , 403: 'Forbidden', 404: 'Not Found'}
+auth_dict = {}
 
 def userFilter(userFp):
 
 	try:
-		with open(userFp, 'rb') as f:
+		with open(userFp, 'r') as f:
 			lines = f.read().splitlines()
 
 		filter_hostnames = {}
@@ -35,7 +36,7 @@ def userFilter(userFp):
 			for item in line.split()[1:]:
 				this_hostnames.append(item)
 
-			filter_hostnames[base64.b64encode(bytes(cred))] = this_hostnames
+			filter_hostnames[base64.b64encode(bytes(cred, "utf-8"))] = this_hostnames
 
 		return filter_hostnames
 
@@ -52,8 +53,8 @@ def authStrings(authFp):
 
 		authList = []
 		for line in lines:
-			authList.append(base64.b64encode(bytes(line.split()[0])))
-
+			authList.append((base64.b64encode(bytes(line.split()[0]))).decode('utf_8'))
+			auth_dict[(base64.b64encode(bytes(line.split()[0]))).decode('utf_8')] = (line.decode('ascii'))[:(line.decode('ascii')).find(':')]
 		return authList
 
 	except IOError:
@@ -63,7 +64,7 @@ def authStrings(authFp):
 
 def send_error(code, client):
 
-	version_string = b'HTTP/1.1'
+	version_string = 'HTTP/1.1'
 	msg = msg_dict[code]
 
 	year, month, day, hh, mm, ss, wd, y, z = time.gmtime(time.time())
@@ -78,31 +79,34 @@ def send_error(code, client):
 	else:
 		response_string = version_string+ '  '+ str(code) + ' ' + msg+ '\r\nDate: '+date_header+'Proxy-Authenticate: Basic realm=\"Access to internal site\"\r\n'
 
-	# print(response_string)
-	client.send(response_string)
+	print(response_string)
+	client.send(response_string.encode('utf-8'))
 
 	return 0
 
 def proxy_thread(conn, client_addr):
 
 	# get the request from browser
-	request = conn.recv(MAX_DATA_RECV)
+	request = (conn.recv(MAX_DATA_RECV)).decode('utf_8')
 	
 	# parse the first line
 	first_line = request.split('\n')[0]
 	
-	option = first_line.split()[0]
-	if option not in ['GET', 'HEAD', 'POST']:
-		print option
+	try:
+		option = first_line.split()[0]
+	except :
+		return 0
+
+	if option not in ['CONNECT', 'GET', 'HEAD', 'POST']:
 		send_error(405, conn)
 		return 0
 
 	authentication =  request[request.find(': Basic ')+8:].split('\n')[0][:-1]
-	print authentication
 	if authentication not in authKeys:
 		print('[AUTH ERROR]')
 		send_error(407, conn)
 		return 0
+	print("Authentication done by ", auth_dict[authentication])
 
 	try:
 		# get url
@@ -114,7 +118,7 @@ def proxy_thread(conn, client_addr):
 
 	for i in range(0,len(BLOCKED)):
 		if BLOCKED[i] in url:
-			print "Blacklisted", first_line
+			print("Blacklisted", first_line)
 			conn.close()
 			sys.exit(1)
 
@@ -147,7 +151,7 @@ def proxy_thread(conn, client_addr):
 		# create a socket to connect to the web server
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  
 		s.connect((webserver, port))
-		s.send(request)         # send request to webserver
+		s.send(request.encode('utf_8'))         # send request to webserver
 		
 		while 1:
 			# receive data from web server
@@ -161,7 +165,7 @@ def proxy_thread(conn, client_addr):
 
 		s.close()
 		conn.close()
-	except socket.error, (value, message):
+	except(socket.error):
 		if s:
 			s.close()
 		if conn:
@@ -193,6 +197,6 @@ if __name__ == '__main__':
 		conn, client_addr = s.accept()
 
 		# create a thread to handle request
-		thread.start_new_thread(proxy_thread, (conn, client_addr))
+		_thread.start_new_thread(proxy_thread, (conn, client_addr))
 		
 	s.close()
