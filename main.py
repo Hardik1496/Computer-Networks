@@ -123,6 +123,11 @@ def proxy_thread(conn, client_addr):
 			conn.close()
 			sys.exit(1)
 
+	rules = AdblockRules(raw_rules)
+	if rules.should_block(url):
+                printout("Blocked\n",first_line,client_addr)
+                conn.close()
+                sys.exit(1)
 	# print "Request", first_line
 	
 	# find the webserver and port
@@ -179,6 +184,11 @@ def proxy_thread(conn, client_addr):
 if __name__ == '__main__':
 
 	# create a socket
+	raw_rules = []
+    with open('easylist.txt') as f:
+        raw_rules = f.read().splitlines()
+
+
 	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
 	authKeys = authStrings(userff)
 	filter_hostnames = userFilter(userff)

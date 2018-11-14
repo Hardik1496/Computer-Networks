@@ -1,4 +1,3 @@
-
 import os,sys,_thread,socket
 # from PyQt4.QtNetwork import QNetworkAccessManager
 # from abpy import Filter
@@ -85,24 +84,23 @@ def proxy_thread(conn, client_addr,raw_rules):
 
     # get url
     url = first_line.split(' ')[1]
-    # adblockFilter = Filter(file("easylist.txt"))
-    # rules = AdblockRules(raw_rules)
+    rules = AdblockRules(raw_rules)
 
     for i in range(0,len(BLOCKED)):
         if BLOCKED[i] in url:
             printout("Blacklisted",first_line,client_addr)
             conn.close()
             sys.exit(1)
-        if rules.should_block(first_line):
-            printout("Blocked\nBlocked\nBlocked\nBlocked\nBlocked\nBlocked\nBlocked\nBlocked\nBlocked\nBlocked\n\n\n\n\n\n\n\n\n\n",first_line,client_addr)
-            conn.close()
-            sys.exit(1)
+    if rules.should_block(url):
+                printout("Blocked\nBlocked\nBlocked\nBlocked\nBlocked\nBlocked\nBlocked\nBlocked\nBlocked\nBlocked\n\n\n\n\n\n\n\n\n\n",first_line,client_addr)
+                conn.close()
+                sys.exit(1)
         # if adblockFilter.match(url):
         #     printout("Blocked",first_line,client_addr)
         #     conn.close()
         #     sys.exit(1)
 
-    printout("Request",first_line,client_addr)
+    # printout("Request",first_line,client_addr)
     # print "URL:",url
     # print
     
@@ -135,23 +133,22 @@ def proxy_thread(conn, client_addr,raw_rules):
         s.connect((webserver, port))
         s.send(request)         # send request to webserver
         
-        print ("request ",request)
+        # print ("request ",request)
         i=0
-        while i<10:
+        while 1:
             # receive data from web server
             data = s.recv(MAX_DATA_RECV)
             
             if (len(data) > 0):
                 # send to browser
-                print ("data ",data)
+                # print ("data ",data)
                 conn.send(data)
             else:
                 break
-            i=i+1
-            print(i,"  =========================================")
+            # print(i,"  =========================================")
         s.close()
         conn.close()
-    except (socket.error, (value, message)):
+    except (socket.error):
         if s:
             s.close()
         if conn:
