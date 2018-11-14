@@ -3,53 +3,31 @@ import argparse, time
 import base64
 from adblockparser import AdblockRules
 
-argparser  = argparse.ArgumentParser(description="HTTP Proxy")
+argparser  = argparse.ArgumentParser(description="Proxy Server")
 argparser.add_argument('-p', '--port', help='Port Number', default=8080)
-argparser.add_argument('-u', '--userff', help='user based filter file', default='pass.txt')
-argparser.add_argument('-f', '--filter', help='Domain Names to Filter', nargs='+', default=[])
+argparser.add_argument('-u', '--userfile', help='authentication file', default='pass.txt')
 args = argparser.parse_args()
 
 port = args.port		
-filter_hostnames_args = args.filter
-userff = args.userff
+auth_file = args.userfile
+prev_authentication = ""
 
-BACKLOG = 50            # how many pending connections queue will hold
-MAX_DATA_RECV = 999999  # max number of bytes we receive at once
-DEBUG = True            # set to True to see the debug msgs
-BLOCKED = ["bjp"]            # just an example. Remove with [""] for no blocking at all.
-weekdayname = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-monthname = [None,
-				 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-				 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+# importing rules for adblocker from easylist.txt
+raw_rules = []
+with open('easylist.txt') as f:
+	raw_rules = f.read().splitlines()
+rules = AdblockRules(raw_rules)
+
+BACKLOG = 50            		# how many pending connections queue will hold
+MAX_DATA_RECV = 999999 		 	# max number of bytes we receive at once
+BLOCKED = ["bjp"]            	# just an example. Remove with [""] for no blocking at all.
 msg_dict = {407: '407 Proxy Authentication Required', 405: 'Method Not Allowed' , 403: 'Forbidden', 404: 'Not Found'}
 auth_dict = {}
 
-def userFilter(userFp):
+def authStrings(authFile):
 
 	try:
-		with open(userFp, 'r') as f:
-			lines = f.read().splitlines()
-
-		filter_hostnames = {}
-		for line in lines:
-			cred = line.split(' ')[0]
-			this_hostnames = []
-			for item in line.split()[1:]:
-				this_hostnames.append(item)
-
-			filter_hostnames[base64.b64encode(bytes(cred, "utf-8"))] = this_hostnames
-
-		return filter_hostnames
-
-	except IOError:
-		print("User Filtering File:  %s Does not Exist" %(userFp))
-		exit()
-		return None
-
-def authStrings(authFp):
-
-	try:
-		with open(authFp, 'rb') as f:
+		with open(authFile, 'rb') as f:
 			lines = f.read().splitlines()
 
 		authList = []
@@ -59,76 +37,57 @@ def authStrings(authFp):
 		return authList
 
 	except IOError:
-		print("Authentication File:  %s Does not Exist" %(authFp))
+		print("Authentication File:  %s Does not Exist" %(authFile))
 		exit()
 		return None
 
-def send_error(code, client):
-
-	version_string = 'HTTP/1.1'
-	msg = msg_dict[code]
-
-	year, month, day, hh, mm, ss, wd, y, z = time.gmtime(time.time())
-	date_header = "%s, %02d %3s %4d %02d:%02d:%02d GMT\r\n" % (
-				weekdayname[wd],
-				day, monthname[month], year,
-				hh, mm, ss)
-
-	if code != 407:
-		# response_string = version_string+ '  '+ str(code) + ' ' + msg+ '\r\nDate: '+date_header#+'Content-Type: text/html\r\nConnection: close\r\n'
-		response_string = "%d %s" % (code, msg)
-	else:
-		response_string = version_string+ '  '+ str(code) + ' ' + msg+ '\r\nDate: '+date_header+'Proxy-Authenticate: Basic realm=\"Access to internal site\"\r\n'
-
-	print(response_string)
-	client.send(response_string.encode('utf-8'))
-
-	return 0
-
 def proxy_thread(conn, client_addr):
 
-	# get the request from browser
+	global prev_authentication
+	# get the request from client
 	request = (conn.recv(MAX_DATA_RECV)).decode('utf_8')
 	
 	# parse the first line
 	first_line = request.split('\n')[0]
 	
+	# getting type of request
 	try:
-		option = first_line.split()[0]
+		req_type = first_line.split()[0]
 	except :
 		return 0
 
-	if option not in ['CONNECT', 'GET', 'HEAD', 'POST']:
-		send_error(405, conn)
+	# checking for validity of request type 
+	if req_type not in ['CONNECT', 'GET', 'HEAD', 'POST']:
+		print(msg_dict[405])
 		return 0
 
 	authentication =  request[request.find(': Basic ')+8:].split('\n')[0][:-1]
-	if authentication not in authKeys:
-		print('[AUTH ERROR]')
-		send_error(407, conn)
-		return 0
-	print("Authentication done by ", auth_dict[authentication])
+	if authentication != prev_authentication:
+		if authentication not in authKeys:
+			print(msg_dict[407])
+			return 0
+		else:
+			prev_authentication = authentication
+			print("Authentication done by ", auth_dict[authentication])
 
 	try:
 		# get url
 		url = first_line.split(' ')[1]
 	except socket.gaierror:
-		print('[ERROR]')
-		send_error(404, conn)
+		print(msg_dict[404])
 		return 0
 
+	# searching for blacklisted url
 	for i in range(0,len(BLOCKED)):
 		if BLOCKED[i] in url:
 			print("Blacklisted", first_line)
 			conn.close()
 			sys.exit(1)
 
-	rules = AdblockRules(raw_rules)
 	if rules.should_block(url):
-                printout("Blocked\n",first_line,client_addr)
-                conn.close()
-                sys.exit(1)
-	# print "Request", first_line
+		print("Ad Blocked")
+		conn.close()
+		sys.exit(1)
 	
 	# find the webserver and port
 	http_pos = url.find("://")          # find pos of ://
@@ -152,8 +111,6 @@ def proxy_thread(conn, client_addr):
 	else:       # specific port
 		port = int((temp[(port_pos+1):])[:webserver_pos-port_pos-1])
 		webserver = temp[:port_pos]
-
-	rules = AdblockRules(raw_rules)
 
 	try:
 		# create a socket to connect to the web server
@@ -184,22 +141,18 @@ def proxy_thread(conn, client_addr):
 if __name__ == '__main__':
 
 	# create a socket
-	raw_rules = []
-	with open('easylist.txt') as f:
-		raw_rules = f.read().splitlines()
-
-
 	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
-	authKeys = authStrings(userff)
-	filter_hostnames = userFilter(userff)
+	authKeys = authStrings(auth_file)
 
+	#Trying ports till success
 	while True:
 		try:
 			s.bind(('', port))
-			print("Server running on port %d" % (port))
 			break
 		except:
 			port += 1
+
+	print("Server running on port %d" % (port))
 
 	# listenning
 	s.listen(BACKLOG)
@@ -212,4 +165,5 @@ if __name__ == '__main__':
 		# create a thread to handle request
 		_thread.start_new_thread(proxy_thread, (conn, client_addr))
 		
+	# close socket
 	s.close()
