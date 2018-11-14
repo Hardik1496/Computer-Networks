@@ -20,8 +20,8 @@ rules = AdblockRules(raw_rules)
 
 BACKLOG = 50            		# how many pending connections queue will hold
 MAX_DATA_RECV = 999999 		 	# max number of bytes we receive at once
-BLOCKED = ["bjp"]            	# just an example. Remove with [""] for no blocking at all.
-msg_dict = {407: '407 Proxy Authentication Required', 405: 'Method Not Allowed' , 403: 'Forbidden', 404: 'Not Found'}
+BLOCKED = []            	# just an example. Remove with [""] for no blocking at all.
+msg_dict = {407: '407 Proxy Authentication Required', 405: '405 Method Not Allowed' , 403: '403 Forbidden', 404: '404 Not Found'}
 auth_dict = {}
 
 def authStrings(authFile):
@@ -40,6 +40,26 @@ def authStrings(authFile):
 		print("Authentication File:  %s Does not Exist" %(authFile))
 		exit()
 		return None
+
+def filterdUrl(authFile):
+
+	try:
+		with open(authFile, 'rb') as f:
+			lines = f.read().splitlines()
+
+			filtered_url = {}
+			for line in lines:
+				cred = line.split()[0]
+				urls = [x.decode('ascii') for x in line.split()[1:]]
+				filtered_url[(base64.b64encode(line.split()[0])).decode('utf_8')] = urls
+
+		return filtered_url
+
+	except IOError:
+		print("User Filtering File:  %s Does not Exist" %(authFile))
+		exit()
+		return None
+
 
 def auth_box(client):
 	days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -75,6 +95,7 @@ def proxy_thread(conn, client_addr):
 	if req_type not in ['CONNECT', 'GET', 'HEAD', 'POST']:
 		print(msg_dict[405])
 		return 0
+	
 	authentication =  request[request.find(': Basic ')+8:].split('\n')[0][:-1]
 	if authentication != prev_authentication:
 		if authentication not in authKeys:
@@ -93,11 +114,16 @@ def proxy_thread(conn, client_addr):
 		return 0
 
 	# searching for blacklisted url
-	for i in range(0,len(BLOCKED)):
-		if BLOCKED[i] in url:
+	for i in BLOCKED:
+		if i in url:
 			print("Blacklisted", first_line)
 			conn.close()
 			sys.exit(1)
+
+	for i in filt_url[authentication]:
+		if i in url:
+			print(msg_dict[403])
+			return 1
 
 	if rules.should_block(url):
 		print("Ad Blocked : ", url)
@@ -158,7 +184,8 @@ if __name__ == '__main__':
 	# create a socket
 	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
 	authKeys = authStrings(auth_file)
-
+	filt_url = filterdUrl(auth_file)
+	
 	#Trying ports till success
 	while True:
 		try:

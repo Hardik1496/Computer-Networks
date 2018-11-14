@@ -1,3 +1,3 @@
-hardik:123 yahoo.com gmail.com
-mukul:456 google.com
+hardik:123 bjp.org
+mukul:456 bbc.com
 satyam:123
