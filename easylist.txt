@@ -14,6 +14,7 @@
 ! 
 ! -----------------------General advert blocking filters-----------------------!
 ! *** easylist:easylist/easylist_general_block.txt ***
+*time*.com*
 &act=ads_
 &ad.vid=$~xmlhttprequest
 &ad_box_

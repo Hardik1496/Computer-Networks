@@ -41,6 +41,21 @@ def authStrings(authFile):
 		exit()
 		return None
 
+def auth_box(client):
+	days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+	months = [None,
+				 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+				 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+	year, month, day, hh, mm, ss, wd, y, z = time.gmtime(time.time())
+	date_header = "%s, %02d %3s %4d %02d:%02d:%02d GMT\r\n" % (
+				days[wd],
+				day, months[month], year,
+				hh, mm, ss)
+
+	response_string = 'HTTP/1.1'+ '  '+ '407' + ' ' + msg_dict[407]+ '\r\nDate: '+date_header+'Proxy-Authenticate: Basic realm=\"Access to internal site\"\r\n'
+	client.send(response_string.encode('utf-8'))
+	return 0
+
 def proxy_thread(conn, client_addr):
 
 	global prev_authentication
@@ -60,11 +75,11 @@ def proxy_thread(conn, client_addr):
 	if req_type not in ['CONNECT', 'GET', 'HEAD', 'POST']:
 		print(msg_dict[405])
 		return 0
-
 	authentication =  request[request.find(': Basic ')+8:].split('\n')[0][:-1]
 	if authentication != prev_authentication:
 		if authentication not in authKeys:
 			print(msg_dict[407])
+			auth_box(conn)
 			return 0
 		else:
 			prev_authentication = authentication
@@ -85,7 +100,7 @@ def proxy_thread(conn, client_addr):
 			sys.exit(1)
 
 	if rules.should_block(url):
-		print("Ad Blocked")
+		print("Ad Blocked : ", url)
 		conn.close()
 		sys.exit(1)
 	
