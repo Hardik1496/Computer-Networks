@@ -185,8 +185,8 @@ if __name__ == '__main__':
 
 	# create a socket
 	raw_rules = []
-    with open('easylist.txt') as f:
-        raw_rules = f.read().splitlines()
+	with open('easylist.txt') as f:
+		raw_rules = f.read().splitlines()
 
 
 	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
